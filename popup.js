@@ -86,7 +86,7 @@ async function expandAllSections() {
     return;
   }
 
-  setBusy(true, "Expandindo todos os tipos de ativo...");
+  setBusy(true, "Expandindo seções e carregando todas as páginas...");
 
   const response = await sendAction("EXPAND_ALL_SECTIONS");
   if (!response.ok) {
@@ -98,7 +98,7 @@ async function expandAllSections() {
   latestExport = response.data;
   setBusy(false);
   renderSummary(latestExport, response.warnings || latestExport.warnings || []);
-  statusEl.textContent = "Tabelas expandidas e contadores atualizados.";
+  statusEl.textContent = "Seções expandidas e paginação carregada.";
 }
 
 async function refreshData(options = {}) {

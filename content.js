@@ -1,6 +1,15 @@
 (function registerInvestidor10Exporter() {
   const POSITIONS_PATH_PATTERN = /^\/wallet\/my-wallet(?:\/[^/]+)?\/positions\/?$/;
   const EXPORT_BASENAME = "investidor10-posicoes";
+  // Selector for pagination controls — matches common React pagination patterns used by Investidor10
+  const PAGINATION_SELECTOR = [
+    "[class*='pagination']",
+    "[class*='Pagination']",
+    "[class*='paginacao']",
+    "[class*='paginator']",
+    "nav[aria-label*='page' i]",
+    "nav[aria-label*='pagina' i]"
+  ].join(", ");
 
   if (globalThis.__investidor10ExporterRegistered) {
     return;
@@ -108,6 +117,111 @@
     if (closedTriggers.length > 0) {
       await waitForTableRender();
     }
+
+    await expandAllPagination();
+  }
+
+  async function expandAllPagination() {
+    const paginationContainers = Array.from(document.querySelectorAll(PAGINATION_SELECTOR))
+      .map(findPaginationContainer)
+      .filter(Boolean)
+      .filter((container) => !container.dataset.i10PaginationDone);
+
+    for (const container of paginationContainers) {
+      container.dataset.i10PaginationDone = "1";
+      await expandPaginatedSection(container);
+    }
+  }
+
+  function findPaginationContainer(paginationEl) {
+    // Walk up to find the section wrapper that contains both the table and the pagination
+    let node = paginationEl.parentElement;
+    for (let depth = 0; depth < 10 && node; depth += 1) {
+      if (node.querySelector("table")) {
+        return node;
+      }
+      node = node.parentElement;
+    }
+    return null;
+  }
+
+  async function expandPaginatedSection(container) {
+    // Collect rows already visible (page 1) by cloning them out of the live table
+    const table = container.querySelector("table");
+    if (!table) {
+      return;
+    }
+
+    const tbody = table.querySelector("tbody");
+    if (!tbody) {
+      return;
+    }
+
+    // Check how many pages exist before starting
+    const initialButtons = getPageNumberButtons(container);
+    const totalPages = initialButtons.length;
+    if (totalPages <= 1) {
+      return; // only one page, nothing to do
+    }
+
+    // Rows from page 1 are already in the DOM; collect rows from pages 2..N
+    const extraRows = [];
+
+    for (let pageNumber = 2; pageNumber <= totalPages; pageNumber += 1) {
+      // Re-query buttons after each React re-render to avoid stale references
+      const currentButtons = getPageNumberButtons(container);
+      const btn = currentButtons.find((b) => normalizeText(b.innerText || b.textContent) === String(pageNumber));
+      if (!btn || btn.disabled) {
+        continue;
+      }
+
+      btn.click();
+      await waitForTableRender();
+
+      // Re-query tbody after React re-render
+      const freshTbody = container.querySelector("table tbody");
+      if (!freshTbody) {
+        continue;
+      }
+
+      for (const tr of freshTbody.querySelectorAll("tr")) {
+        extraRows.push(tr.cloneNode(true));
+      }
+    }
+
+    if (extraRows.length === 0) {
+      return;
+    }
+
+    // Navigate back to page 1 to restore original DOM state
+    const finalButtons = getPageNumberButtons(container);
+    const firstBtn = finalButtons.find((b) => normalizeText(b.innerText || b.textContent) === "1");
+    if (firstBtn) {
+      firstBtn.click();
+      await waitForTableRender();
+    }
+
+    // Append cloned rows from all other pages into the live tbody
+    const restoredTbody = container.querySelector("table tbody");
+    if (restoredTbody) {
+      for (const tr of extraRows) {
+        restoredTbody.appendChild(tr);
+      }
+    }
+  }
+
+  function getPageNumberButtons(container) {
+    const pagination = container.querySelector(PAGINATION_SELECTOR);
+    if (!pagination) {
+      return [];
+    }
+
+    return Array.from(pagination.querySelectorAll("button, [role='button'], li > a, li > button"))
+      .filter((btn) => {
+        const text = normalizeText(btn.innerText || btn.textContent);
+        // Keep only numeric page buttons, skip Anterior/Próximo/Previous/Next
+        return /^\d+$/.test(text);
+      });
   }
 
   function validatePositionPage() {
